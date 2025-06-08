@@ -81,4 +81,4 @@ Nous comparons deux approches d'optimisation :
 - Hamza OUZAHRA
 - Ahmed TERRAF
 - Samia TOUILE
-- Marwen JADLAQUI
+- Marwen JADLAOUI
