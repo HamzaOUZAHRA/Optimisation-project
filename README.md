@@ -34,6 +34,18 @@ pip install -r requirements.txt
 
 ## Instructions d'Exécution
 
+0.  **Préparation des données (Téléchargement de MNIST)**  
+    Exécutez d'abord le script dataset.py pour télécharger et préparer le dataset :
+    ```bash
+    python dataset.py
+    ```
+    ⚠️ **Important** : Cette étape est obligatoire avant tout entraînement.  
+    ✅ Vous devriez voir :  
+    ```
+    Train size: 60000  Test size: 10000
+    Batch shape: torch.Size([128, 1, 28, 28]) torch.Size([128])
+    ```
+
 1.  **Entraînement avec Pénalisation L1**
     ```bash
     python train_pl1.py
