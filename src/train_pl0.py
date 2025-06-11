@@ -2,6 +2,7 @@ import torch, time, numpy as np
 import torch.nn as nn
 import torch.optim as optim
 from tqdm import trange
+from multiprocessing import Pool, cpu_count
 
 from dataset import get_loaders
 from model   import MLP
@@ -17,11 +18,34 @@ def hard_threshold(param, k):
     mask = (flat.abs() >= thresh).float()
     param.mul_(mask.view_as(param))
 
-def train_single_run(k, device, train_loader, test_loader, sample_input, seed=None, run_num=1):
+def get_loaders_single():
+    """Get data loaders with num_workers=0 for use in multiprocessing workers"""
+    train_loader, test_loader = get_loaders()
+    # Force single process loading
+    train_loader = torch.utils.data.DataLoader(
+        train_loader.dataset,
+        batch_size=train_loader.batch_size,
+        shuffle=True,
+        num_workers=0
+    )
+    test_loader = torch.utils.data.DataLoader(
+        test_loader.dataset,
+        batch_size=test_loader.batch_size,
+        shuffle=False,
+        num_workers=0
+    )
+    return train_loader, test_loader
+
+def train_single_run(args):
     """Train a single model with given k and return final metrics"""
+    k, device, sample_input, seed, run_num = args
+    
     if seed is not None:
         torch.manual_seed(seed)
         np.random.seed(seed)
+    
+    # Create data loaders inside the worker process with num_workers=0
+    train_loader, test_loader = get_loaders_single()
     
     model = MLP().to(device)
     optim_ = optim.SGD(model.parameters(), lr=LR, momentum=MOMENTUM)
@@ -97,9 +121,8 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
-    train_loader, test_loader = get_loaders()
-
     # Prepare a single input example for latency benchmarking
+    train_loader, _ = get_loaders_single()  # Use single process loader here too
     sample_batch, _ = next(iter(train_loader))
     sample_input = sample_batch[:1].to(device)
 
@@ -119,19 +142,18 @@ def main():
     for k in K_GRID:
         print(f"\n{'='*50}")
         print(f"Training PL0 with k={k} ({k/TOTAL_W*100:.1f}% sparsity target)")
-        print(f"Running {N_RUNS} independent runs...")
+        print(f"Running {N_RUNS} independent runs in parallel...")
         print(f"{'='*50}")
         
-        # Store results for all runs
-        all_runs = []
-        
+        # Prepare arguments for parallel execution
+        run_args = []
         for run in range(N_RUNS):
-            print(f"\n--- Starting Run {run+1}/{N_RUNS} for k={k} ---")
-            
-            # Use different seeds for each run to ensure independence
             seed = 42 + run * 100 + k  # Unique seed per run and k
-            run_results = train_single_run(k, device, train_loader, test_loader, sample_input, seed, run+1)
-            all_runs.append(run_results)
+            run_args.append((k, device, sample_input, seed, run+1))
+        
+        # Execute runs in parallel using a process pool
+        with Pool(processes=min(N_RUNS, cpu_count())) as pool:
+            all_runs = pool.map(train_single_run, run_args)
         
         # Calculate statistics across runs
         final_accs = [run['final_acc'] for run in all_runs]
